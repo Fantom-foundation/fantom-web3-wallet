@@ -12,7 +12,6 @@ const { contractFunctions } = require('./constants');
 const REACT_APP_API_URL_WEB3 = 'https://rpc.fantom.network/'
 const REACT_APP_API_URL_FANTOM = 'https://api.fantom.network/api/v1/'
 
-
 let web3 = new Web3(new Web3.providers.HttpProvider(REACT_APP_API_URL_WEB3 || ''));
 
 const getBalance = async (address) => {
@@ -39,7 +38,6 @@ const getKeystore = (privateKey, password) => {
 
 	return web3.eth.accounts.encrypt(privateKey, password);
 };
-// Get info on delegator
 
 const getDelegate = (from, delegateAddress, sfc) => {
 	return new Promise(resolve => {
@@ -62,7 +60,6 @@ const getPrivateKey = (keystore, password) =>
 			resolve(dataRes instanceof Buffer ? EthUtil.bufferToHex(dataRes) : null);
 		})
 	);
-// Get current epoch
 
 const getCurrentEpoch = (from, sfc) => {
 	return new Promise(resolve => {
@@ -75,8 +72,10 @@ const getCurrentEpoch = (from, sfc) => {
 	});
 }
 
+/
 
 const estimateFee = async ({ from, to, value, memo }) => {
+
 
 	const gasPrice = await web3.eth.getGasPrice();
 	const gasLimit = await web3.eth.estimateGas({
@@ -94,12 +93,10 @@ const estimateFee = async ({ from, to, value, memo }) => {
 
 	return fee;
 }
-// Get info on delegator
 
 const getDelegationPendingRewards = async (from, delegateAddress) => {
 	const web3 = new Web3(new Web3.providers.HttpProvider(REACT_APP_API_URL_WEB3 || ''));
 	const sfc = new web3.eth.Contract(contractFunctions, '0xfc00face00000000000000000000000000000000');
-
 	const info = await Promise.all([
 		getCurrentEpoch(from, sfc),
 		getDelegate(from, delegateAddress, sfc) || {}
@@ -122,13 +119,9 @@ const getDelegationPendingRewards = async (from, delegateAddress) => {
 	});
 }
 
-const delegateStake = ({ amount, publicKey, privateKey, validatorId }) => {
-	console.log(amount, publicKey, privateKey, validatorId, '******8amount, publicKey, privateKey, validatorId');
-
+const delegateStake = ({ amount, publicKey, privateKey, validatorId, isWeb = false }) => {
 	const web3 = new Web3(new Web3.providers.HttpProvider(REACT_APP_API_URL_WEB3 || ''));
-
 	const web3Sfc = new web3.eth.Contract(contractFunctions, '0xfc00face00000000000000000000000000000000');
-
 	return transfer({
 		from: publicKey,
 		to: '0xfc00face00000000000000000000000000000000',
@@ -136,7 +129,8 @@ const delegateStake = ({ amount, publicKey, privateKey, validatorId }) => {
 		memo: web3Sfc.methods.createDelegation(validatorId).encodeABI(),
 		privateKey,
 		gasLimit: 200000,
-		web3Delegate: web3
+		web3Delegate: web3,
+		isWeb
 	});
 }
 
@@ -147,7 +141,6 @@ const restoreWallet = async (privateKey) => {
 
 const getTransactionFee = async (gasLimit) => {
 	const gasPrice = await web3.eth.getGasPrice();
-	// const gasLimit = 200000;
 	const fee = Web3.utils.fromWei(
 		BigInt(gasPrice.toString())
 			.multiply(BigInt(gasLimit.toString()))
@@ -163,12 +156,12 @@ const transfer = async ({
 	memo = '',
 	privateKey,
 	gasLimit = 44000,
-	web3Delegate = ''
+	web3Delegate = '',
+	isWeb
 }) => {
 	const useWeb3 = web3Delegate || web3;
 	const nonce = await useWeb3.eth.getTransactionCount(from);
 	const gasPrice = await useWeb3.eth.getGasPrice();
-	// const amount = parseFloat(value)
 
 	const rawTx = {
 		from,
@@ -177,20 +170,25 @@ const transfer = async ({
 		gasLimit: Web3.utils.toHex(gasLimit),
 		gasPrice: Web3.utils.toHex(gasPrice),
 		nonce: Web3.utils.toHex(nonce),
-		data: `0x${memo}`
+		data: memo
 	};
 
+
+
+	const bufferData = EthUtil.addHexPrefix(privateKey)
 	const privateKeyBuffer = EthUtil.toBuffer(privateKey);
 	const tx = new Tx(rawTx);
 	tx.sign(privateKeyBuffer);
 	const serializedTx = tx.serialize();
 	const res = await useWeb3.eth.sendSignedTransaction(`0x${serializedTx.toString('hex')}`);
-	localStorage.setItem('txHash', res.transactionHash);
+	if (isWeb) {
+		localStorage.setItem('txHash', res.transactionHash);
+	}
 
 	return res;
 }
 
-const delegateUnstake = async (publicKey, privateKey) => {
+const delegateUnstake = async (publicKey, privateKey, isWeb = false) => {
 	const web3 = new Web3(new Web3.providers.HttpProvider(REACT_APP_API_URL_WEB3 || ''));
 	const web3Sfc = new web3.eth.Contract(contractFunctions, '0xfc00face00000000000000000000000000000000');
 	return transfer({
@@ -200,14 +198,13 @@ const delegateUnstake = async (publicKey, privateKey) => {
 		memo: web3Sfc.methods.prepareToWithdrawDelegation().encodeABI(),
 		privateKey,
 		gasLimit: 200000,
-		web3Delegate: web3
-		// cb: () => '',
+		web3Delegate: web3,
+		isWeb
 	});
 }
 
-const withdrawDelegateAmount = async (publicKey, privateKey) => {
+const withdrawDelegateAmount = async (publicKey, privateKey, isWeb = false) => {
 	const web3 = new Web3(new Web3.providers.HttpProvider(REACT_APP_API_URL_WEB3 || ''));
-
 	const web3Sfc = new web3.eth.Contract(contractFunctions, '0xfc00face00000000000000000000000000000000');
 	return transfer({
 		from: publicKey,
@@ -216,31 +213,27 @@ const withdrawDelegateAmount = async (publicKey, privateKey) => {
 		memo: web3Sfc.methods.withdrawDelegation().encodeABI(),
 		privateKey,
 		gasLimit: 200000,
-		web3Delegate: web3
-		// cb: () => '',
+		web3Delegate: web3,
+		isWeb,
 	});
 }
 
-const mnemonicToKeys = (mnemonic) => {
-	const seed = Bip39.mnemonicToSeed(mnemonic);
+const mnemonicToKeys = async (mnemonic) => {
+	const seed = await Bip39.mnemonicToSeed(mnemonic);
 	const root = Hdkey.fromMasterSeed(seed);
-
 	const addrNode = root.derive("m/44'/60'/0'/0/0");
 	const pubKey = EthUtil.privateToPublic(addrNode._privateKey);
 	const addr = EthUtil.publicToAddress(pubKey).toString('hex');
 	const publicAddress = EthUtil.toChecksumAddress(addr);
 	const privateKey = EthUtil.bufferToHex(addrNode._privateKey);
-
 	return { publicAddress, privateKey };
 };
 
 const privateKeyToKeys = (privateKey) => {
 	const privateKeyBuffer = EthUtil.toBuffer(privateKey);
-
 	const pubKey = EthUtil.privateToPublic(privateKeyBuffer);
 	const addr = EthUtil.publicToAddress(pubKey).toString('hex');
 	const publicAddress = EthUtil.toChecksumAddress(addr);
-
 	return { publicAddress, privateKey };
 };
 
@@ -249,6 +242,21 @@ const getAccount = async (address) => {
 	return await fetch(`${REACT_APP_API_URL_FANTOM}api/v1/get-account?address=${address}`);
 }
 
+const estimateFeeMobile = async (value) => {
+	let fee;
+	if (web3 && web3.eth) {
+		const gasPrice = await web3.eth.getGasPrice();
+		const gasLimit = value;
+		fee = Web3.utils.fromWei(
+			BigInt(gasPrice.toString())
+				.multiply(BigInt(gasLimit.toString()))
+				.toString()
+		);
+	}
+	return fee;
+}
+
+module.exports.estimateFeeMobile = estimateFeeMobile
 module.exports.getBalance = getBalance
 module.exports.getKeystore = getKeystore
 module.exports.privateKeyToKeys = privateKeyToKeys
